@@ -1,0 +1,86 @@
+{% extends "process_base.html" %}
+{% load i18n %}
+{% load pagination_tags %}
+{% load taggit_extras %}
+{% load staticfiles %}
+{% load url from future %}
+
+{% block title %} {% trans "Explore Processes" %} - {{ block.super }} {% endblock %}
+
+{% block body_class %}process process-list explore{% endblock %}
+
+{% block body %}
+    <div class="span12">
+      <h2 class="page-title">{% trans "Explore Processes" %}</h2>
+    </div>
+    <div class="span4">
+      <div class="pull-right" data-viewby="list">
+        {% include "_viewby.html" %}
+      </div>
+    </div>
+    <div class="span12">
+      <div class="row" id="contain-slider">
+        <div class="span4">
+          <div id="slide-pane">
+            <a href="#" class="toggle toggle-pane"><i class="icon-chevron-left"></i></a>
+            <nav class="tabs-left" id="nav-categories">
+              <h2><a href="#" class="toggle toggle-nav"><i class="icon-chevron-down"></i>{% trans "Categories" %}</a></h2>
+              <ul class="nav">
+                <li><a href="{% url "process_browse" %}"{% ifequal category.slug "All" %} class="active"{% endifequal %}>{% trans "All Categories" %}</a></li>
+                {% for category in topic_category.all %}
+                <li><a href="{% url 'process_list' category.slug %}" {% ifequal curr_category category %} class="active" {% endifequal %}>{{ category.name }}</a></li>
+                {% endfor %}
+              </ul>
+            </nav>
+            <nav class="" id="nav-keywords">
+              <h2><a href="#" class="toggle toggle-nav"><i class="icon-chevron-down"></i> {% trans "Keywords" %}</a></h2>
+              <ul class="nav">
+              </ul>
+            </nav>
+          </div>
+        </div>
+        <div class="tab-content span8 paginate paginate-auto">
+          <div class="tab-pane active list paginate-contents" id="all">
+            {% if process_list %}
+            {% for process in process_list %}
+              {% include "_process_list_item.html" %}
+            {% endfor %}
+            {% else %}
+              <p>{% trans "No data found" %}</p>
+            {% endif %}
+          </div>
+          {% if process_list %}
+            {% paginate %}
+          {% endif %}
+          </div>
+      </div>
+    </div>
+{% endblock %}
+
+{% block extra_script %}
+  <script src="{% static "geonode/js/waypoints.js" %}"></script>
+  <script src="{% static "geonode/js/paginate.js" %}"></script>
+  <script src="{% static "agon_ratings/js/jquery.raty.js" %}"></script>
+  <script type="text/javascript">
+     $(function() {
+       $('.overall_rating').each(function() {
+        var rating = $(this).parents(".avg_rating").data('rating');
+        star(this, rating);
+      });
+       $(".loadmore").on("load.loadmore", function(e, o) {          
+        o.find(".overall_rating").each(function() {
+          var rating = $(this).parents(".avg_rating").data('rating');
+          star(this, rating);
+        });
+       });
+     });
+      function star(elem, rating) {
+          $(elem).raty({
+            half: true,
+           readOnly: true,
+           score: rating,
+           path: "{% static "agon_ratings/img/" %}"
+          });        
+      }
+  </script>
+{% endblock extra_script %}

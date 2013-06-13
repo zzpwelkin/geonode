@@ -24,10 +24,12 @@ from django.conf import settings
 from django.http import HttpResponse, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
 from pycsw import server
+from django.contrib.auth.decorators import login_required
 from geonode.catalogue.backends.pycsw_local import CONFIGURATION
 
 
 @csrf_exempt
+@login_required
 def csw_global_dispatch(request):
     """pycsw wrapper"""
 

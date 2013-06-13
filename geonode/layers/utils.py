@@ -248,6 +248,94 @@ def cleanup(name, uuid):
         logger.warning('Finished cleanup after failed Catalogue/Django '
                        'import for layer: %s', name)
 
+def projection_and_bbox_checked(gs_resource):
+    """
+    checked if updated resource's projection and bbox right
+    
+    @param gs_resource: the instance of geoserver.resource.Coverage or geoserver.resource.Feature
+    
+    @note: if an error was getted, then GeoNodeException exception will be raised
+    """
+    logger.info('>>> Making sure [%s] has a valid projection' % gs_resource.name)
+    if gs_resource.latlon_bbox is None:
+        box = gs_resource.native_bbox[:4]
+        minx, maxx, miny, maxy = [float(a) for a in box]
+        if -180 <= minx <= 180 and -180 <= maxx <= 180 and \
+           -90 <= miny <= 90 and -90 <= maxy <= 90:
+            logger.info('GeoServer failed to detect the projection for layer '
+                        '[%s]. Guessing EPSG:4326', gs_resource.name)
+            # If GeoServer couldn't figure out the projection, we just
+            # assume it's lat/lon to avoid a bad GeoServer configuration
+
+            gs_resource.latlon_bbox = gs_resource.native_bbox
+            gs_resource.projection = "EPSG:4326"
+            gs_resource.catalog.save(gs_resource)
+        else:
+            msg = ('GeoServer failed to detect the projection for layer '
+                   '[%s]. It doesn\'t look like EPSG:4326, so backing out '
+                   'the layer.')
+            logger.info(msg, gs_resource.name)
+            cascading_delete(gs_resource.catalog, gs_resource.name)
+            raise GeoNodeException(msg % gs_resource.name)
+        
+def add_record_of_resource(user, gs_resource, title=None, abstract=None, permissions=None, keywords=()):
+    """
+    Add record of resource ${gs_resource}
+    
+    @param user: the instance of User model
+    @param gs_resource: the instance of geoserver.resource.Coverage or geoserver.resource.Feature
+    @param title:
+    @param abstract: 
+    @param permission: 
+    @param keywords: 
+    
+    @return: Layer object that was created or reset
+    """
+    # Step 10. Create the Django record for the layer
+    logger.info('>>> Creating record for [%s]', gs_resource.name)
+    # FIXME: Do this inside the layer object
+    typename = gs_resource.store.workspace.name + ':' + gs_resource.name
+    layer_uuid = str(uuid.uuid1())
+    defaults = dict(store=gs_resource.store.name,
+                    storeType=gs_resource.store.resource_type,
+                    typename=typename,
+                    title=title or gs_resource.title,
+                    uuid=layer_uuid,
+                    abstract=abstract or gs_resource.abstract or '',
+                    owner=user)
+
+    workspace = gs_resource.store.workspace.name
+    saved_layer, created = Layer.objects.get_or_create(name=gs_resource.name,
+                                                       workspace=workspace,
+                                                       defaults=defaults)
+
+    saved_layer.keywords.add(*keywords)
+
+    # Create the points of contact records for the layer
+    # A user without a profile might be uploading this
+    logger.info('>>>  Creating points of contact records for '
+                '[%s]', gs_resource.name)
+    pc, __ = Profile.objects.get_or_create(user=user,
+                                           defaults={"name": user.username})
+    ac, __ = Profile.objects.get_or_create(user=user,
+                                           defaults={"name": user.username}
+                                           )
+
+    logger.debug('Creating poc and author records for %s', user)
+
+    saved_layer.poc = pc
+    saved_layer.metadata_author = ac
+
+    # Step 11. Set default permissions on the newly created layer
+    # FIXME: Do this as part of the post_save hook
+    logger.info('>>> Setting default permissions for [%s]', gs_resource.name)
+    if permissions is not None:
+
+        layer_set_permissions(saved_layer, permissions)
+    else:
+        saved_layer.set_default_permissions()
+        
+    return saved_layer
 
 def save(layer, base_file, user, overwrite=True, title=None,
          abstract=None, permissions=None, keywords=()):
@@ -391,34 +479,13 @@ def save(layer, base_file, user, overwrite=True, title=None,
                'try renaming your files.' % name)
         logger.warn(msg)
         raise GeoNodeException(msg)
-
-    # Step 6. Make sure our data always has a valid projection
-    # FIXME: Put this in gsconfig.py
-    logger.info('>>> Step 6. Making sure [%s] has a valid projection' % name)
-    if gs_resource.latlon_bbox is None:
-        box = gs_resource.native_bbox[:4]
-        minx, maxx, miny, maxy = [float(a) for a in box]
-        if -180 <= minx <= 180 and -180 <= maxx <= 180 and \
-           -90 <= miny <= 90 and -90 <= maxy <= 90:
-            logger.info('GeoServer failed to detect the projection for layer '
-                        '[%s]. Guessing EPSG:4326', name)
-            # If GeoServer couldn't figure out the projection, we just
-            # assume it's lat/lon to avoid a bad GeoServer configuration
-
-            gs_resource.latlon_bbox = gs_resource.native_bbox
-            gs_resource.projection = "EPSG:4326"
-            cat.save(gs_resource)
-        else:
-            msg = ('GeoServer failed to detect the projection for layer '
-                   '[%s]. It doesn\'t look like EPSG:4326, so backing out '
-                   'the layer.')
-            logger.info(msg, name)
-            cascading_delete(cat, name)
-            raise GeoNodeException(msg % name)
-
+    
+    # Setp6. Checked if the projection and bbox is right of this resource
+    projection_and_bbox_checked(gs_resource)
+     
     # Step 7. Create the style and assign it to the created resource
     # FIXME: Put this in gsconfig.py
-    logger.info('>>> Step 7. Creating style for [%s]' % name)
+    logger.info('>>> Creating style for [%s]' % name)
     publishing = cat.get_layer(name)
 
     if 'sld' in files:
@@ -441,41 +508,10 @@ def save(layer, base_file, user, overwrite=True, title=None,
         publishing.default_style = cat.get_style(name)
         cat.save(publishing)
 
-    # Step 10. Create the Django record for the layer
-    logger.info('>>> Step 10. Creating Django record for [%s]', name)
-    # FIXME: Do this inside the layer object
-    typename = gs_resource.store.workspace.name + ':' + gs_resource.name
-    layer_uuid = str(uuid.uuid1())
-    defaults = dict(store=gs_resource.store.name,
-                    storeType=gs_resource.store.resource_type,
-                    typename=typename,
-                    title=title or gs_resource.title,
-                    uuid=layer_uuid,
-                    abstract=abstract or gs_resource.abstract or '',
-                    owner=user)
-
-    workspace = gs_resource.store.workspace.name
-    saved_layer, created = Layer.objects.get_or_create(name=gs_resource.name,
-                                                       workspace=workspace,
-                                                       defaults=defaults)
-
-    saved_layer.keywords.add(*keywords)
-
-    # Step 9. Create the points of contact records for the layer
-    # A user without a profile might be uploading this
-    logger.info('>>> Step 9. Creating points of contact records for '
-                '[%s]', name)
-    pc, __ = Profile.objects.get_or_create(user=user,
-                                           defaults={"name": user.username})
-    ac, __ = Profile.objects.get_or_create(user=user,
-                                           defaults={"name": user.username}
-                                           )
-
-    logger.debug('Creating poc and author records for %s', user)
-
-    saved_layer.poc = pc
-    saved_layer.metadata_author = ac
-
+    # Setep 8. Add record of this resource
+    saved_layer = add_record_of_resource(user, gs_resource, title = title, abstract = abstract, 
+                            permissions = permissions, keywords = keywords)
+    
     logger.info('>>> Step XML. Processing XML metadata (if available)')
     # Step XML. If an XML metadata document is uploaded,
     # parse the XML metadata and update uuid and URLs as per the content model
@@ -494,19 +530,9 @@ def save(layer, base_file, user, overwrite=True, title=None,
 
         saved_layer.save()
 
-    # Step 11. Set default permissions on the newly created layer
-    # FIXME: Do this as part of the post_save hook
-    logger.info('>>> Step 11. Setting default permissions for [%s]', name)
-    if permissions is not None:
-
-        layer_set_permissions(saved_layer, permissions)
-    else:
-        saved_layer.set_default_permissions()
-
     # Step 12. Verify the layer was saved correctly and clean up if needed
     logger.info('>>> Step 12. Verifying the layer [%s] was created '
                 'correctly' % name)
-
     # Verify the object was saved to the Django database
     try:
         Layer.objects.get(name=name)

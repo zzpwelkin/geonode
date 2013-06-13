@@ -50,7 +50,7 @@ DATABASES = {
 # although not all choices may be available on all operating systems.
 # If running in a Windows environment this must be set to the same as your
 # system time zone.
-TIME_ZONE = 'America/Chicago'
+TIME_ZONE = 'Asia/Chongqing'
 
 # Language code for this installation. All choices can be found here:
 # http://www.i18nguy.com/unicode/language-identifiers.html
@@ -162,6 +162,7 @@ INSTALLED_APPS = (
     'user_messages',
 
     # GeoNode internal apps
+    #'geonode.workflow',
     'geonode.maps',
     'geonode.layers',
     'geonode.people',
@@ -169,6 +170,7 @@ INSTALLED_APPS = (
     'geonode.security',
     'geonode.search',
     'geonode.catalogue',
+    'geonode.wpsprocess',
 )
 
 if DOCUMENTS_APP:
@@ -179,7 +181,7 @@ LOGGING = {
     'disable_existing_loggers': True,
     'formatters': {
         'verbose': {
-            'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
+            'format': '%(levelname)s %(asctime)s %(name)s:%(lineno)d %(process)d %(thread)d %(message)s'
         },
         'simple': {
             'format': '%(message)s',        },
@@ -192,7 +194,7 @@ LOGGING = {
         'console':{
             'level':'DEBUG',
             'class':'logging.StreamHandler',
-            'formatter': 'simple'
+            'formatter': 'verbose'
         },
         'mail_admins': {
             'level': 'ERROR',
@@ -202,28 +204,29 @@ LOGGING = {
     'loggers': {
         'django': {
             'handlers':['null'],
-            'propagate': True,
-            'level':'INFO',
+            'propagate': False,
+            'level':'WARNING',
         },
         "geonode": {
             "handlers": ["console"],
-            "level": "ERROR",
+            'propagate': True,
+            "level": "DEBUG",
         },
         "gsconfig.catalog": {
             "handlers": ["console"],
-            "level": "ERROR",
+            "level": "WARNING",
         },
         "owslib": {
             "handlers": ["console"],
-            "level": "ERROR",
+            "level": "WARNING",
         },
         "pycsw": {
             "handlers": ["console"],
-            "level": "ERROR",
+            "level": "WARNING",
         },
         'south': {
             "handlers": ["console"],
-            "level": "ERROR",
+            "level": "WARNING",
         },
     },
 }
@@ -348,6 +351,16 @@ GEOSERVER_BASE_URL = "http://localhost:8080/geoserver/"
 # edit layer details on GeoServer
 GEOSERVER_CREDENTIALS = "admin", "geoserver"
 
+# WPS service setting
+#PROCESSING_SERVICE_URL = 'http://localhost:8081/wpsprocesses/'
+
+# WPS service setting
+WPS = {
+       'repertory':'/var/www/wpsrepertory',
+       'defconfigure':os.path.join(PROJECT_ROOT, 'wpsprocess', 'repertorytempplate', 'default.cfg'),
+       'testprofile':os.path.join(PROJECT_ROOT, 'wpsprocess', 'repertorytempplate', 'tests.py'),
+       }
+
 # CSW settings
 CATALOGUE = {
     'default': {
@@ -362,8 +375,9 @@ CATALOGUE = {
         #'ENGINE': 'geonode.catalogue.backends.generic',
 
         # The FULLY QUALIFIED base url to the CSW instance for this GeoNode
-        'URL': '%scatalogue/csw' % SITEURL,
-        #'URL': 'http://localhost:8080/geonetwork/srv/en/csw',
+        #'URL': '%scatalogue/csw' % SITEURL,
+        #'URL': 'http://localhost/cgi-bin/csw',
+        'URL': 'http://localhost:8000/catalogue/csw',
         #'URL': 'http://localhost:8080/deegree-csw-demo-3.0.4/services',
 
         # login credentials (for GeoNetwork)

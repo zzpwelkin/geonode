@@ -1,3 +1,4 @@
+#-*-coding:utf8-*-
 #########################################################################
 #
 # Copyright (C) 2012 OpenPlans
@@ -76,6 +77,12 @@ def default_catalogue_backend():
 def get_catalogue(backend=None, skip_caps=True):
     """Returns a catalogue object.
     """
+#    if settings.DEBUG:
+#        import sys
+#        sys.path.append('/home/zzpwelkin/information.lib/backup/eclipse集成开发环境/eclipseCDT/plugins/org.python.pydev.debug_2.3.0.2011121518/pysrc/')
+#        import pydevd
+#        pydevd.settrace()
+
     default_backend_config = backend or default_catalogue_backend()
     backend_name = default_backend_config['ENGINE']
     catalog_module = load_backend(backend_name)

@@ -1,0 +1,17 @@
+{% load url from future %}
+{% load i18n %}
+{% load agon_ratings_tags %}
+
+<article>
+  <div class="details">
+  	<a href="{% url 'wps_global_dispatch' process.wpsservice.username %}" class="btn btn-info download">{% trans "Test" %}</a>
+    <a href="{% url 'process_execute' process.wpsservice.username process.identifier %}"><h3>{{ process.identifier }}-{{ process.version }}</h3>
+    <div class="meta">{% trans 'from' %} <a href="{% url "profile_detail" process.wpsservice.username %}">{{ process.wpsservice.username }}</a> 
+    <div>Created at {{process.created_time}}</div> 
+    <div>Last changed at {{ process.recent_changed_time|timesince }} {% trans 'ago' %}</div>
+    </div>
+    <p class="abstract">{{ process.title }}</p>
+    <p class="abstract">{{process.abstract|default:'No describe' }}</p>
+    <a href="#" class="btn btn-info how">{% trans "Describe" %}</a>
+  </div>
+</article>

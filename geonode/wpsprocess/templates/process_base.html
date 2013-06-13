@@ -1,0 +1,20 @@
+{% extends "site_base.html" %}
+{% load i18n %}
+{% load url from future %}
+
+{% block title %} {{ block.super }} {% endblock %}
+
+{% block body_class %}process{% endblock %}
+
+{% block body_outer %}
+    <div class="span12">
+      <!--nav class="back"><a href="{% url "process_browse" %}"><i class="icon-chevron-left"></i> See all processs</a></nav-->
+      <ul class="nav nav-tabs" id="subnav-tabs">
+            <li><a href="{% url "process_browse" %}" class="explore">{% trans "Explore processs" %}</a></li>
+            <li><a href="{% url "update_profile" %}" class="explore">{% trans "Upload profile" %}</a></li>
+            {# <li><a href="{% url "process_search_page" %}" class="search">{% trans "Search processs" %}</a></li> #}
+      </ul>
+    </div>
+    {% block body %}{% endblock body %}
+    {% block sidebar %}{% endblock sidebar %}
+{% endblock body_outer %}

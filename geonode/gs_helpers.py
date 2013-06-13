@@ -166,8 +166,11 @@ def cascading_delete(cat, layer_name):
     try:
         if layer_name.find(':') != -1:
             workspace, name = layer_name.split(':')
-            ws = cat.get_workspace(workspace)
-            resource = cat.get_resource(name, workspace = workspace)
+            if workspace == 'default':
+                ws = cat.get_default_workspace()
+            else:
+                ws = cat.get_workspace(workspace)
+            resource = cat.get_resource(name, workspace = ws)
         else:
             resource = cat.get_resource(layer_name)
     except EnvironmentError, e: 
