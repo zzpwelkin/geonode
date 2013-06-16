@@ -262,7 +262,7 @@ class UpdateProfileView(FormView):
     
     def get_context_data(self, **kwargs):
         context = super(UpdateProfileView, self).get_context_data(**kwargs)
-        context['GEONODE_CLIENT_LOCATION'] = settings.GEONODE_CLIENT_LOCATION
+        #context['GEONODE_CLIENT_LOCATION'] = settings.GEONODE_CLIENT_LOCATION
         return context
     
     def form_valid(self, form):

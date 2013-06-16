@@ -44,12 +44,13 @@ sitemaps = {
 urlpatterns = patterns('',
 
     # Static pages
-    url(r'^$', 'django.views.generic.simple.direct_to_template',
-                {'template': 'index.html'}, name='home'),
+    url(r'^$', 'geonode.views.index', name='home'),
     url(r'^help/$', 'django.views.generic.simple.direct_to_template',
                 {'template': 'help.html'}, name='help'),
     url(r'^developer/$', 'django.views.generic.simple.direct_to_template',
-                {'template': 'developer.html'}, name='dev'),
+                {'template': 'developer.html'}, name='developer'),
+    url(r'^about/$', 'django.views.generic.simple.direct_to_template',
+                {'template': 'about.html'}, name='about'),
 
     # Layer views
     (r'^layers/', include('geonode.layers.urls')),
@@ -65,6 +66,12 @@ urlpatterns = patterns('',
 
     # Search views
     (r'^search/', include('geonode.search.urls')),
+
+    # Printing Views
+    (r'^printing/', include('geonode.printing.urls')),
+
+    # Upload views
+    (r'^upload/', include('geonode.upload.urls')),
 
     # Social views
     (r"^account/", include("account.urls")),

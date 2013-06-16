@@ -30,6 +30,7 @@ import glob
 import sys
 
 # Django functionality
+from django.contrib.auth.models import User
 from django.template.defaultfilters import slugify
 from django.conf import settings
 
@@ -39,17 +40,15 @@ from geonode import GeoNodeException
 from geonode.utils import check_geonode_is_up
 from geonode.people.utils import get_valid_user
 from geonode.layers.models import Layer
+from geonode.people.models import Profile 
+from geonode.geoserver.helpers import cascading_delete, get_sld_for, delete_from_postgis
 from geonode.layers.metadata import set_metadata
-from geonode.people.models import Profile
-from geonode.gs_helpers import cascading_delete
-from geonode.gs_helpers import get_sld_for
-from geonode.gs_helpers import delete_from_postgis
-from django.contrib.auth.models import User
-from geonode.security.models import AUTHENTICATED_USERS, ANONYMOUS_USERS
+from geonode.security.enumerations import AUTHENTICATED_USERS, ANONYMOUS_USERS
 # Geoserver functionality
 import geoserver
 from geoserver.catalog import FailedRequestError
 from geoserver.resource import FeatureType, Coverage
+from zipfile import ZipFile
 
 logger = logging.getLogger('geonode.layers.utils')
 
@@ -75,11 +74,28 @@ def layer_type(filename):
        returns a gsconfig resource_type string
        that can be either 'featureType' or 'coverage'
     """
-    extension = os.path.splitext(filename)[1]
-    if extension.lower() in ['.shp']:
-        return FeatureType.resource_type
-    elif extension.lower() in ['.tif', '.tiff', '.geotiff', '.geotif']:
-        return Coverage.resource_type
+    base_name, extension = os.path.splitext(filename)
+    
+    shp_exts = ['.shp',]
+    cov_exts = ['.tif', '.tiff', '.geotiff', '.geotif']
+    csv_exts = ['.csv']
+    kml_exts = ['.kml']
+
+    if extension.lower() == '.zip':
+        zf = ZipFile(filename)
+        # ZipFile doesn't support with statement in 2.6, so don't do it
+        try:
+            for n in zf.namelist():
+                b, e = os.path.splitext(n.lower())
+                if e in shp_exts or e in cov_exts or e in csv_exts:
+                    base_name, extension = b,e
+        finally:
+            zf.close()
+
+    if extension.lower() in shp_exts + csv_exts + kml_exts:
+         return FeatureType.resource_type
+    elif extension.lower() in cov_exts:
+         return Coverage.resource_type
     else:
         msg = ('Saving of extension [%s] is not implemented' % extension)
         raise GeoNodeException(msg)
@@ -511,7 +527,27 @@ def save(layer, base_file, user, overwrite=True, title=None,
     # Setep 8. Add record of this resource
     saved_layer = add_record_of_resource(user, gs_resource, title = title, abstract = abstract, 
                             permissions = permissions, keywords = keywords)
-    
+
+    # Step 10. Create the Django record for the layer
+    logger.info('>>> Step 10. Creating Django record for [%s]', name)
+    # FIXME: Do this inside the layer object
+    typename = gs_resource.store.workspace.name + ':' + gs_resource.name
+    layer_uuid = str(uuid.uuid1())
+    defaults = dict(store=gs_resource.store.name,
+                    storeType=gs_resource.store.resource_type,
+                    typename=typename,
+                    title=title or gs_resource.title,
+                    uuid=layer_uuid,
+                    abstract=abstract or gs_resource.abstract or '',
+                    owner=user)
+
+    workspace = gs_resource.store.workspace.name
+    saved_layer, created = Layer.objects.get_or_create(name=gs_resource.name,
+                                                       workspace=workspace,
+                                                       defaults=defaults)
+
+    saved_layer.keywords.add(*keywords)
+
     logger.info('>>> Step XML. Processing XML metadata (if available)')
     # Step XML. If an XML metadata document is uploaded,
     # parse the XML metadata and update uuid and URLs as per the content model
@@ -530,12 +566,20 @@ def save(layer, base_file, user, overwrite=True, title=None,
 
         saved_layer.save()
 
+    # Step 11. Set default permissions on the newly created layer
+    # FIXME: Do this as part of the post_save hook
+    logger.info('>>> Step 10. Setting default permissions for [%s]', name)
+    if permissions is not None:
+        layer_set_permissions(saved_layer, permissions)
+    else:
+        saved_layer.set_default_permissions()
+
     # Step 12. Verify the layer was saved correctly and clean up if needed
-    logger.info('>>> Step 12. Verifying the layer [%s] was created '
+    logger.info('>>> Step 11. Verifying the layer [%s] was created '
                 'correctly' % name)
     # Verify the object was saved to the Django database
     try:
-        Layer.objects.get(name=name)
+        Layer.objects.get(typename=typename)
     except Layer.DoesNotExist, e:
         msg = ('There was a problem saving the layer %s to Catalogue/Django. '
                'Error is: %s' % (layer, str(e)))
@@ -579,7 +623,6 @@ def get_default_user():
         raise GeoNodeException('You must have an admin account configured '
                                'before importing data. '
                                'Try: django-admin.py createsuperuser')
-
 
 def file_upload(filename, user=None, title=None,
                 skip=True, overwrite=False, keywords=()):
@@ -675,6 +718,11 @@ def upload(incoming, user=None, overwrite=False,
             save_it = False
             status = 'skipped'
             layer = existing_layers[0]
+            if verbosity > 0:
+                msg = ('Stopping process because '
+                       '--overwrite was not set '
+                       'and a layer with this name already exists.')
+                print >> sys.stderr, msg
         else:
             save_it = True
 
@@ -758,3 +806,4 @@ def _create_db_featurestore(name, data, overwrite=False, charset=None):
     except Exception:
         delete_from_postgis(name)
         raise
+

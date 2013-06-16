@@ -33,17 +33,15 @@ from django.utils.translation import ugettext_lazy as _
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.urlresolvers import reverse
 
-from geonode.layers.models import Layer, TopicCategory, ResourceBase
+from geonode.layers.models import Layer
+from geonode.base.models import ResourceBase
 from geonode.maps.signals import map_changed_signal
-from geonode.security.models import PermissionLevelMixin
-from geonode.security.models import AUTHENTICATED_USERS, ANONYMOUS_USERS
+from geonode.security.enumerations import AUTHENTICATED_USERS, ANONYMOUS_USERS
 from geonode.utils import GXPMapBase
 from geonode.utils import GXPLayerBase
 from geonode.utils import layer_from_viewer_config
 from geonode.utils import default_map_config
 from geonode.utils import forward_mercator
-
-from taggit.managers import TaggableManager
 
 from geoserver.catalog import Catalog
 from geoserver.layer import Layer as GsLayer
@@ -178,10 +176,10 @@ class Map(ResourceBase, GXPMapBase):
 
         self.set_bounds_from_layers(self.local_layers)
 
+        self.save()
+
         if layer_names != set([l.typename for l in self.local_layers]):
             map_changed_signal.send_robust(sender=self,what_changed='layers')
-
-        self.save()
 
     def keyword_list(self):
         keywords_qs = self.keywords.all()
@@ -308,6 +306,10 @@ class Map(ResourceBase, GXPMapBase):
 
         self.set_default_permissions()
 
+    @property
+    def class_name(self):
+        return self.__class__.__name__
+
 class MapLayer(models.Model, GXPLayerBase):
     """
     The MapLayer model represents a layer included in a map.  This doesn't just
@@ -379,13 +381,25 @@ class MapLayer(models.Model, GXPLayerBase):
         # if this is a local layer, get the attribute configuration that
         # determines display order & attribute labels
         if self.local:
-            layer = Layer.objects.get(typename=self.name)
-            attribute_cfg = layer.attribute_config()
-            if "getFeatureInfo" in attribute_cfg:
+            if Layer.objects.filter(typename=self.name).exists():
+                layer = Layer.objects.get(typename=self.name)
+                attribute_cfg = layer.attribute_config()
+                if "getFeatureInfo" in attribute_cfg:
                     cfg["getFeatureInfo"] = attribute_cfg["getFeatureInfo"]
+            else:
+                # shows maplayer with pink tiles, 
+                # and signals that there is problem
+                # TODO: clear orphaned MapLayers
+                layer = None
         return cfg
 
-
+    @property
+    def layer_title(self):
+        if self.local:
+            title = Layer.objects.get(typename=self.name).title
+        else:
+            title = self.name
+        return title
 
     @property
     def local_link(self):

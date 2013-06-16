@@ -29,8 +29,6 @@ from django.test.client import Client
 from django.contrib.auth.models import User, AnonymousUser
 from django.utils import simplejson as json
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.template import Context
-from django.template.loader import get_template
 from django.forms import ValidationError
 from django.contrib.contenttypes.models import ContentType
 from django.core.urlresolvers import reverse
@@ -44,15 +42,12 @@ from geonode import GeoNodeException
 
 from geonode.layers.models import Layer
 from geonode.layers.forms import JSONField, LayerUploadForm
-from geonode.layers.utils import save, layer_type, get_files, get_valid_name, \
-                                get_valid_layer_name, cleanup
+from geonode.layers.utils import layer_type, get_files, get_valid_name, \
+                                get_valid_layer_name
 from geonode.people.utils import get_valid_user
+from geonode.security.enumerations import ANONYMOUS_USERS, AUTHENTICATED_USERS
 
-from geoserver.catalog import FailedRequestError
 from geoserver.resource import FeatureType, Coverage
-
-from django.db.models import signals
-
 
 class LayersTest(TestCase):
     """Tests geonode.layers app/module
@@ -91,7 +86,6 @@ class LayersTest(TestCase):
     # should set_layer_permissions remove any existing perms granted??
 
     perm_spec = {"anonymous":"_none","authenticated":"_none","users":[["admin","layer_readwrite"]]}
-
     def test_layer_set_default_permissions(self):
         """Verify that Layer.set_default_permissions is behaving as expected
         """
@@ -106,8 +100,8 @@ class LayersTest(TestCase):
         current_perms = layer.get_all_level_info()
 
         # Test that LEVEL_READ is set for ANONYMOUS_USERS and AUTHENTICATED_USERS
-        self.assertEqual(layer.get_gen_level(geonode.security.models.ANONYMOUS_USERS), layer.LEVEL_READ)
-        self.assertEqual(layer.get_gen_level(geonode.security.models.AUTHENTICATED_USERS), layer.LEVEL_READ)
+        self.assertEqual(layer.get_gen_level(ANONYMOUS_USERS), layer.LEVEL_READ)
+        self.assertEqual(layer.get_gen_level(AUTHENTICATED_USERS), layer.LEVEL_READ)
 
         admin_perms = current_perms['users'][layer.owner.username]
 
@@ -128,8 +122,8 @@ class LayersTest(TestCase):
         geonode.layers.utils.layer_set_permissions(layer, self.perm_spec)
 
         # Test that the Permissions for ANONYMOUS_USERS and AUTHENTICATED_USERS were set correctly
-        self.assertEqual(layer.get_gen_level(geonode.security.models.ANONYMOUS_USERS), layer.LEVEL_NONE)
-        self.assertEqual(layer.get_gen_level(geonode.security.models.AUTHENTICATED_USERS), layer.LEVEL_NONE)
+        self.assertEqual(layer.get_gen_level(ANONYMOUS_USERS), layer.LEVEL_NONE)
+        self.assertEqual(layer.get_gen_level(AUTHENTICATED_USERS), layer.LEVEL_NONE)
 
         # Test that previous permissions for users other than ones specified in
         # the perm_spec (and the layers owner) were removed
@@ -248,10 +242,13 @@ class LayersTest(TestCase):
         info = geonode.security.views._perms_info(layer, geonode.layers.views.LAYER_LEV_NAMES)
 
         # Test that ANONYMOUS_USERS and AUTHENTICATED_USERS are set properly
-        self.assertEqual(info[geonode.maps.models.ANONYMOUS_USERS], layer.LEVEL_READ)
-        self.assertEqual(info[geonode.maps.models.AUTHENTICATED_USERS], layer.LEVEL_READ)
+        self.assertEqual(info[ANONYMOUS_USERS], layer.LEVEL_READ)
+        self.assertEqual(info[AUTHENTICATED_USERS], layer.LEVEL_READ)
 
         self.assertEqual(info['users'], sorted(layer_info['users'].items()))
+
+        # Test that layer owner can edit layer
+        self.assertTrue(layer.owner.has_perm(set([u'layers.change_layer']), layer))
 
         # TODO Much more to do here once jj0hns0n understands the ACL system better
 
@@ -294,18 +291,6 @@ class LayersTest(TestCase):
         response = c.get(reverse('layer_upload'))
         self.assertEquals(response.status_code,200)
 
-    def test_search(self):
-        '''/data/search/ -> Test accessing the data search page'''
-        c = Client()
-        response = c.get(reverse('layer_search_page'))
-        self.failUnlessEqual(response.status_code, 200)
-
-    def test_search_api(self):
-        '''/data/search/api -> Test accessing the data search api JSON'''
-        c = Client()
-        response = c.get(reverse('layer_search_api'))
-        self.failUnlessEqual(response.status_code, 200)
-
     def test_describe_data(self):
         '''/data/base:CA/metadata -> Test accessing the description of a layer '''
         self.assertEqual(2, User.objects.all().count())
@@ -329,6 +314,15 @@ class LayersTest(TestCase):
         #place_ name should come before description
         self.assertEqual(custom_attributes[0].attribute_label, "Place Name")
         self.assertEqual(custom_attributes[1].attribute_label, "Description")
+        # TODO: do test against layer with actual attribute statistics
+        self.assertEqual(custom_attributes[1].count, 1)
+        self.assertEqual(custom_attributes[1].min, "NA")
+        self.assertEqual(custom_attributes[1].max, "NA")
+        self.assertEqual(custom_attributes[1].average, "NA")
+        self.assertEqual(custom_attributes[1].median, "NA")
+        self.assertEqual(custom_attributes[1].stddev, "NA")
+        self.assertEqual(custom_attributes[1].sum, "NA")
+        self.assertEqual(custom_attributes[1].unique_values, "NA")
 
     def test_layer_attribute_config(self):
         lyr = Layer.objects.get(pk=1)
@@ -722,7 +716,7 @@ class LayersTest(TestCase):
         c.login(username='admin', password='admin')
 
         #Remove the layer
-        response = c.post(url)
+        c.post(url)
 
         #Check there are no ratings matching the remove layer
         rating = OverallRating.objects.filter(category=2,object_id=layer_id)
@@ -746,13 +740,15 @@ class LayersTest(TestCase):
 
         # First test un-authenticated
         response = c.post(reverse('feature_edit_check', args=(valid_layer_typename,)))
-        self.assertEquals(response.status_code, 401)
+        response_json = json.loads(response.content)
+        self.assertEquals(response_json['authorized'], False)
 
         # Next Test with a user that does NOT have the proper perms
         logged_in = c.login(username='bobby', password='bob')
         self.assertEquals(logged_in, True)
         response = c.post(reverse('feature_edit_check', args=(valid_layer_typename,)))
-        self.assertEquals(response.status_code, 401)
+        response_json = json.loads(response.content)
+        self.assertEquals(response_json['authorized'], False)
 
         # Login as a user with the proper permission and test the endpoint
         logged_in = c.login(username='admin', password='admin')
@@ -761,13 +757,17 @@ class LayersTest(TestCase):
         response = c.post(reverse('feature_edit_check', args=(valid_layer_typename,)))
 
         # Test that the method returns 401 because it's not a datastore
-        self.assertEquals(response.status_code, 401)
+        response_json = json.loads(response.content)
+        self.assertEquals(response_json['authorized'], False)
 
         layer = Layer.objects.all()[0]
         layer.storeType = "dataStore"
         layer.save()
 
-        response = c.post(reverse('feature_edit_check', args=(valid_layer_typename,)))
 
-        # Test that the method returns 401 if it's a datastore
-        self.assertEquals(response.status_code, 200)
+        # Test that the method returns authorized=True if it's a datastore
+        with self.settings(DB_DATASTORE=True):
+            # The check was moved from the template into the view
+            response = c.post(reverse('feature_edit_check', args=(valid_layer_typename,)))
+            response_json = json.loads(response.content)
+            self.assertEquals(response_json['authorized'], True)
