@@ -17,8 +17,8 @@ button.login {
     margin-right: 10px;
 }
 </style>
-<script type="text/javascript" src="{{ STATIC_URL}}geonode/js/maps/GeoNode-mixin.js"></script>
-<script type="text/javascript" src="{{ STATIC_URL}}geonode/js/maps/GeoNode-GeoExplorer.js"></script>
+<script type="text/javascript" src="{{ STATIC_URL}}geonode/js/extjs/GeoNode-mixin.js"></script>
+<script type="text/javascript" src="{{ STATIC_URL}}geonode/js/extjs/GeoNode-GeoExplorer.js"></script>
 <script type="text/javascript">
 Ext.ns("GeoNode.plugins");
 /** api: constructor
@@ -546,6 +546,7 @@ GeoNode.Composer = Ext.extend(GeoExplorer.Composer, {
 var app;
 Ext.onReady(function() {
 {% autoescape off %}
+    GeoExt.Lang.set("{{ LANGUAGE_CODE }}");
     var config = Ext.apply({
         authStatus: {% if user.is_authenticated %} 200{% else %} 401{% endif %},
         proxy: "/proxy/?url=",
@@ -554,9 +555,9 @@ Ext.onReady(function() {
          * provides listing and, with an authenticated user, saving of 
          * maps on the server for sharing and editing.
          */
-        rest: "{% url maps_browse %}",
-        ajaxLoginUrl: "{% url account_ajax_login %}",
-        homeUrl: "{% url home %}",
+        rest: "{% url "maps_browse" %}",
+        ajaxLoginUrl: "{% url "account_ajax_login" %}",
+        homeUrl: "{% url "home" %}",
         localGeoServerBaseUrl: "{{ GEOSERVER_BASE_URL }}",
         localCSWBaseUrl: "{{ CATALOGUE_BASE_URL }}",
         csrfToken: "{{ csrf_token }}",

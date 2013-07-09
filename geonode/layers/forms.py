@@ -41,10 +41,10 @@ class JSONField(forms.CharField):
 
 class LayerForm(forms.ModelForm):
     date = forms.DateTimeField(widget=forms.SplitDateTimeWidget)
-    date.widget.widgets[0].attrs = {"class":"date"}
+    date.widget.widgets[0].attrs = {"class":"datepicker", 'data-date-format': "yyyy-mm-dd"}
     date.widget.widgets[1].attrs = {"class":"time"}
-    temporal_extent_start = forms.DateField(required=False,widget=forms.DateInput(attrs={"class":"date"}))
-    temporal_extent_end = forms.DateField(required=False,widget=forms.DateInput(attrs={"class":"date"}))
+    temporal_extent_start = forms.DateField(required=False,widget=forms.DateInput(attrs={"class":"datepicker", 'data-date-format': "yyyy-mm-dd"}))
+    temporal_extent_end = forms.DateField(required=False,widget=forms.DateInput(attrs={"class":"datepicker", 'data-date-format': "yyyy-mm-dd"}))
 
     poc = forms.ModelChoiceField(empty_label = "Person outside GeoNode (fill form)",
                                  label = "Point Of Contact", required=False,
@@ -61,7 +61,7 @@ class LayerForm(forms.ModelForm):
                    'bbox_x0', 'bbox_x1', 'bbox_y0', 'bbox_y1', 'srid',
                    'csw_typename', 'csw_schema', 'csw_mdsource', 'csw_type',
                    'csw_wkt_geometry', 'metadata_uploaded', 'metadata_xml', 'csw_anytext',
-                   'popular_count', 'share_count')
+                   'popular_count', 'share_count', 'thumbnail', 'default_style', 'styles')
 
 class LayerUploadForm(forms.Form):
     base_file = forms.FileField()
@@ -145,3 +145,9 @@ class LayerAttributeForm(forms.ModelForm):
     class Meta:
         model = Attribute
         exclude = ('attribute_type',)
+
+class LayerStyleUploadForm(forms.Form):
+    layerid = forms.IntegerField()
+    name = forms.CharField(required=False)
+    update = forms.BooleanField(required=False)
+    sld = forms.FileField()

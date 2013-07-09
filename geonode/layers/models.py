@@ -35,8 +35,10 @@ from django.utils.translation import ugettext_lazy as _
 from django.core.urlresolvers import reverse
 
 from geonode import GeoNodeException
-from geonode.base.models import ResourceBase, ResourceBaseManager, Link, resourcebase_post_save
+from geonode.base.models import ResourceBase, ResourceBaseManager, Link, \
+    resourcebase_post_save
 from geonode.utils import  _user, _password, get_wms
+from geonode.utils import http_client
 from geonode.geoserver.helpers import cascading_delete
 from geonode.people.models import Profile
 from geonode.security.enumerations import AUTHENTICATED_USERS, ANONYMOUS_USERS
@@ -101,16 +103,19 @@ class Layer(ResourceBase):
     default_style = models.ForeignKey(Style, related_name='layer_default_style', null=True, blank=True)
     styles = models.ManyToManyField(Style, related_name='layer_styles')
 
-    def download_links(self):
-        links = []
-        for url in self.link_set.all():
-            description = '%s (%s Format)' % (self.title, url.name)
-            links.append((self.title, description, 'WWW:DOWNLOAD-1.0-http--download', url.url))
-        abs_url = '%s%s' % (settings.SITEURL[:-1], self.get_absolute_url())
-        links.append((self.title, self.title, 'WWW:LINK-1.0-http--link', abs_url))
-        return links
+    def update_thumbnail(self, save=True):
+        self.save_thumbnail(self._thumbnail_url(width=80, height=80), save)
 
-    def thumbnail(self, width=20, height=None):
+
+    def _render_thumbnail(self, spec):
+        resp, content = http_client.request(spec)
+        if resp.status < 200 or resp.status > 299:
+            logger.warning('Unable to obtain thumbnail: %s', content)
+            return
+        return content
+
+
+    def _thumbnail_url(self, width=20, height=None):
         """ Generate a URL representing thumbnail of the layer """
 
         params = {
@@ -148,6 +153,13 @@ class Layer(ResourceBase):
             "dataStore" : "Vector Data",
             "coverageStore": "Raster Data",
         }).get(self.storeType, "Data")
+
+    @property
+    def store_type(self):
+        cat = Layer.objects.gs_catalog
+        res = cat.get_resource(self.name)
+        res.store.fetch()
+        return res.store.dom.find('type').text
 
     @property
     def service_type(self):
@@ -199,9 +211,6 @@ class Layer(ResourceBase):
         if self.owner:
             self.set_user_level(self.owner, self.LEVEL_ADMIN)
 
-    def keyword_list(self):
-        return [kw.name for kw in self.keywords.all()]
-
     def tiles_url(self):
         return self.link_set.get(name='Tiles').url
 
@@ -213,6 +222,10 @@ class Layer(ResourceBase):
     def class_name(self):
         return self.__class__.__name__
 
+class Layer_Styles(models.Model):
+    layer = models.ForeignKey(Layer)
+    style = models.ForeignKey(Style)
+    
 class AttributeManager(models.Manager):
     """Helper class to access filtered attributes
     """
@@ -231,6 +244,7 @@ class Attribute(models.Model):
     """
     layer = models.ForeignKey(Layer, blank=False, null=False, unique=False, related_name='attribute_set')
     attribute = models.CharField(_('attribute name'), help_text=_('name of attribute as stored in shapefile/spatial database'), max_length=255, blank=False, null=True, unique=False)
+    description = models.CharField(_('attribute description'), help_text=_('description of attribute to be used in metadata'), max_length=255, blank=False, null=True)
     attribute_label = models.CharField(_('attribute label'), help_text=_('title of attribute as displayed in GeoNode'), max_length=255, blank=False, null=True, unique=False)
     attribute_type = models.CharField(_('attribute type'), help_text=_('the data type of the attribute (integer, string, geometry, etc)'), max_length=50, blank=False, null=False, default='xsd:string', unique=False)
     visible = models.BooleanField(_('visible?'), help_text=_('specifies if the attribute should be displayed in identify results'), default=True)
@@ -277,12 +291,28 @@ def pre_save_layer(instance, sender, **kwargs):
     if instance.title == '' or instance.title is None:
         instance.title = instance.name
 
+def pre_delete_layer(instance, sender, **kwargs):
+    """
+    Remove any associated style to the layer, if it is not used by other layers.
+    Default style will be deleted in post_delete_layer
+    """
+    logger.debug("Going to delete the styles associated for [%s]", instance.typename)
+    default_style = instance.default_style
+    for style in instance.styles.all():
+        if style.layer_styles.all().count()==1:
+            if style != default_style:
+                style.delete()
+    
 def post_delete_layer(instance, sender, **kwargs):
-    """Removed the layer from any associated map, if any.
+    """
+    Removed the layer from any associated map, if any.
+    Remove the layer default style.
     """
     from geonode.maps.models import MapLayer
     logger.debug("Going to delete associated maplayers for [%s]", instance.typename)
     MapLayer.objects.filter(name=instance.typename).delete()
+    logger.debug("Going to delete the default style for [%s]", instance.typename)
+    instance.default_style.delete()
 
 def geoserver_pre_save(instance, sender, **kwargs):
     """Send information to geoserver.
@@ -363,6 +393,9 @@ def geoserver_pre_save(instance, sender, **kwargs):
     instance.bbox_y0 = bbox[2]
     instance.bbox_y1 = bbox[3]
 
+    instance.update_thumbnail(save=False)
+
+
 def geoserver_post_save(instance, sender, **kwargs):
     """Save keywords to GeoServer
 
@@ -441,7 +474,8 @@ def geoserver_post_save(instance, sender, **kwargs):
         #FIXME(Ariel): This works for public layers, does it work for restricted too?
         # would those end up with no geotiff links, like, forever?
 
-        links = wcs_links(settings.GEOSERVER_BASE_URL + 'wcs?', instance.typename)
+        links = wcs_links(settings.GEOSERVER_BASE_URL + 'wcs?', instance.typename, 
+            bbox=instance.bbox[:-1], crs=instance.bbox[-1], height=height, width=width)
         for ext, name, mime, wcs_url in links:
             Link.objects.get_or_create(resource= instance.resourcebase_ptr,
                                 url=wcs_url,
@@ -494,8 +528,21 @@ def geoserver_post_save(instance, sender, **kwargs):
                         defaults=dict(
                             extension='tiles',
                             name=_("Tiles"),
-                            mime='text/png',
+                            mime='image/png',
                             link_type='image',
+                            )
+                        )
+
+
+    html_link_url = '%s%s' % (settings.SITEURL[:-1], instance.get_absolute_url())
+
+    Link.objects.get_or_create(resource= instance.resourcebase_ptr,
+                        url=html_link_url,
+                        defaults=dict(
+                            extension='html',
+                            name=instance.typename,
+                            mime='text/html',
+                            link_type='html',
                             )
                         )
 
@@ -504,7 +551,6 @@ def geoserver_post_save(instance, sender, **kwargs):
     for link in instance.link_set.all():
         if not urlparse(settings.SITEURL).hostname == urlparse(link.url).hostname and not \
                     urlparse(settings.GEOSERVER_BASE_URL).hostname == urlparse(link.url).hostname:
-
             link.delete()
 
     #Save layer attributes
@@ -512,6 +558,7 @@ def geoserver_post_save(instance, sender, **kwargs):
 
     #Save layer styles
     set_styles(instance, gs_catalog)
+
 
 def set_styles(layer, gs_catalog):
     style_set = []
@@ -664,5 +711,6 @@ signals.pre_save.connect(pre_save_layer, sender=Layer)
 signals.pre_save.connect(geoserver_pre_save, sender=Layer)
 signals.pre_delete.connect(geoserver_pre_delete, sender=Layer)
 signals.post_save.connect(geoserver_post_save, sender=Layer)
+signals.pre_delete.connect(pre_delete_layer, sender=Layer)
 signals.post_delete.connect(post_delete_layer, sender=Layer)
 signals.post_save.connect(resourcebase_post_save, sender=Layer)

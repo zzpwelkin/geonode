@@ -1,14 +1,18 @@
 from datetime import datetime
+import os
+import hashlib
 
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import User
 from django.utils.translation import ugettext_lazy as _
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.core.files.base import ContentFile
 from django.conf import settings
+from django.contrib.staticfiles.templatetags import staticfiles
 
-from geonode.base.enumerations import COUNTRIES, ALL_LANGUAGES, \
-    HIERARCHY_LEVELS, UPDATE_FREQUENCIES, CONSTRAINT_OPTIONS, \
-    SPATIAL_REPRESENTATION_TYPES, \
+from geonode.base.enumerations import ALL_LANGUAGES, \
+    HIERARCHY_LEVELS, UPDATE_FREQUENCIES, \
     DEFAULT_SUPPLEMENTAL_INFORMATION, LINK_TYPES
 from geonode.utils import bbox_to_wkt
 from geonode.people.models import Profile, Role
@@ -19,7 +23,7 @@ from taggit.managers import TaggableManager
 def get_default_category():
     if settings.DEFAULT_TOPICCATEGORY:
         try:
-            return TopicCategory.objects.get(slug=settings.DEFAULT_TOPICCATEGORY)
+            return TopicCategory.objects.get(identifier=settings.DEFAULT_TOPICCATEGORY)
         except TopicCategory.DoesNotExist:
             raise TopicCategory.DoesNotExist('The default TopicCategory indicated in settings is not found.')
     else:
@@ -57,42 +61,134 @@ class ContactRole(models.Model):
         unique_together = (("contact", "resource", "role"),)
 
 class TopicCategory(models.Model):
-
-    name = models.CharField(max_length=50)
-    slug = models.SlugField()
-    description = models.TextField(blank=True)
+    """
+    Metadata about high-level geographic data thematic classification.
+    It should reflect a list of codes from TC211
+    See: http://www.isotc211.org/2005/resources/Codelist/gmxCodelists.xml
+    <CodeListDictionary gml:id="MD_MD_TopicCategoryCode">
+    """
+    identifier = models.CharField(max_length=255, editable=False, default='location')
+    description = models.TextField(editable=False)
+    gn_description = models.TextField('GeoNode description', default='', null=True)
+    is_choice = models.BooleanField(default=True)
 
     def __unicode__(self):
-        return u"{0}".format(self.name)
+        return u"{0}".format(self.gn_description)
 
-    @property
-    def counts(self):
-        counts = {
-            'layers': 0,
-            'maps': 0,
-            'documents': 0
-        }
-        for resource in self.resourcebase_set.all():
-            try:
-                resource.layer
-                counts['layers'] += 1
-            except ObjectDoesNotExist:
-                pass
-            try:
-                resource.map
-                counts['maps'] += 1
-            except ObjectDoesNotExist:
-                pass
-            try: 
-                resource.document
-                counts['documents'] += 1
-            except ObjectDoesNotExist:
-                pass
-        return counts
+    class Meta:
+        ordering = ("identifier",)
+        verbose_name_plural = 'Metadata Topic Categories'
+        
+class SpatialRepresentationType(models.Model):
+    """
+    Metadata information about the spatial representation type.
+    It should reflect a list of codes from TC211
+    See: http://www.isotc211.org/2005/resources/Codelist/gmxCodelists.xml
+    <CodeListDictionary gml:id="MD_SpatialRepresentationTypeCode">
+    """
+    identifier = models.CharField(max_length=255, editable=False)
+    description = models.CharField(max_length=255, editable=False)
+    gn_description = models.CharField('GeoNode description', max_length=255)
+    is_choice = models.BooleanField(default=True)
+
+    def __unicode__(self):
+        return self.gn_description
+
+    class Meta:
+        ordering = ("identifier",)
+        verbose_name_plural = 'Metadata Spatial Representation Types'
+        
+class Region(models.Model):
+
+    code = models.CharField(max_length=50)
+    name = models.CharField(max_length=255)
+
+    def __unicode__(self):
+        return self.name
 
     class Meta:
         ordering = ("name",)
-        verbose_name_plural = 'Topic Categories'
+        verbose_name_plural = 'Metadata Regions'
+        
+class RestrictionCodeType(models.Model):
+    """
+    Metadata information about the spatial representation type.
+    It should reflect a list of codes from TC211
+    See: http://www.isotc211.org/2005/resources/Codelist/gmxCodelists.xml
+    <CodeListDictionary gml:id="MD_RestrictionCode">
+    """
+    identifier = models.CharField(max_length=255, editable=False)
+    description = models.TextField(max_length=255, editable=False)
+    gn_description = models.TextField('GeoNode description', max_length=255)
+    is_choice = models.BooleanField(default=True)
+
+    def __unicode__(self):
+        return self.gn_description
+
+    class Meta:
+        ordering = ("identifier",)
+        verbose_name_plural = 'Metadata Restriction Code Types'
+
+class Thumbnail(models.Model):
+
+    thumb_file = models.FileField(upload_to='thumbs')
+    thumb_spec = models.TextField(null=True, blank=True)
+    version = models.PositiveSmallIntegerField(null=True, default=0)
+
+    def save_thumb(self, image, id):
+        '''image must be png data in a string for now'''
+        self._delete_thumb()
+        md5 = hashlib.md5()
+        md5.update(id + str(self.version))
+        self.version = self.version + 1
+        self.thumb_file.save(md5.hexdigest() + ".png", ContentFile(image))
+
+    def _delete_thumb(self):
+        try:
+            self.thumb_file.delete()
+        except OSError:
+            pass
+
+    def delete(self):
+        self._delete_thumb()
+        super(Thumbnail,self).delete()
+
+
+class ThumbnailMixin(object):
+    '''Add Thumbnail management behavior. The model must declared a field
+    named thumbnail.'''
+
+    def save_thumbnail(self, spec, save=True):
+        '''generic support for saving. `render` implementation must exist
+        and return image as bytes of a png image (for now)
+        '''
+        render = getattr(self, '_render_thumbnail', None)
+        if render is None:
+            raise Exception('Must have _render_thumbnail(spec) function')
+        image = render(spec)
+        self.thumbnail, created = Thumbnail.objects.get_or_create(resourcebase__id=self.id)
+        path = self._thumbnail_path()
+        self.thumbnail.thumb_spec = spec
+        self.thumbnail.save_thumb(image, path)
+        # have to save the thumb ref if new but also trigger XML regeneration
+        if save:
+            self.save()
+
+    def _thumbnail_path(self):
+        return '%s-%s' % (self._meta.object_name, self.pk)
+
+    def _get_default_thumbnail(self):
+        return getattr(self, "_missing_thumbnail", staticfiles.static(settings.MISSING_THUMBNAIL))
+
+    def get_thumbnail_url(self):
+        thumb = self.thumbnail
+        return thumb == None and self._get_default_thumbnail() or thumb.thumb_file.url
+
+    def has_thumbnail(self):
+        '''Determine if the thumbnail object exists and an image exists'''
+        thumb = self.thumbnail
+        return os.path.exists(thumb.get_thumbnail_path()) if thumb else False
+
 
 class ResourceBaseManager(models.Manager):
 
@@ -109,7 +205,8 @@ class ResourceBaseManager(models.Manager):
                                                 defaults={"name": "Geonode Admin"})[0]
         return contact
 
-class ResourceBase(models.Model, PermissionLevelMixin):
+
+class ResourceBase(models.Model, PermissionLevelMixin, ThumbnailMixin):
     """
     Base Resource Object loosely based on ISO 19115:2003
     """
@@ -139,14 +236,15 @@ class ResourceBase(models.Model, PermissionLevelMixin):
 
     # section 3
     keywords = TaggableManager(_('keywords'), blank=True, help_text=_('commonly used word(s) or formalised word(s) or phrase(s) used to describe the subject (space or comma-separated'))
-    keywords_region = models.CharField(_('keywords region'), max_length=3, choices=COUNTRIES, default='USA', help_text=_('keyword identifies a location'))
-    constraints_use = models.CharField(_('constraints use'), max_length=255, choices=[(x, x) for x in CONSTRAINT_OPTIONS], default='copyright', help_text=_('constraints applied to assure the protection of privacy or intellectual property, and any special restrictions or limitations or warnings on using the resource or metadata'))
-    constraints_other = models.TextField(_('constraints other'), blank=True, null=True, help_text=_('other restrictions and legal prerequisites for accessing and using the resource or metadata'))
-    spatial_representation_type = models.CharField(_('spatial representation type'), max_length=255, choices=SPATIAL_REPRESENTATION_TYPES, blank=True, null=True, help_text=_('method used to represent geographic information in the dataset'))
+    regions = models.ManyToManyField(Region, verbose_name=_('keywords region'), help_text=_('keyword identifies a location'), blank=True)
+    restriction_code_type = models.ForeignKey(RestrictionCodeType, verbose_name=_('restrictions'), help_text=_('limitation(s) placed upon the access or use of the data.'), null=True, blank=True, limit_choices_to=Q(is_choice=True))
+    constraints_other = models.TextField(_('restrictions other'), blank=True, null=True, help_text=_('other restrictions and legal prerequisites for accessing and using the resource or metadata'))
 
     # Section 4
     language = models.CharField(_('language'), max_length=3, choices=ALL_LANGUAGES, default='eng', help_text=_('language used within the dataset'))
-    category = models.ForeignKey(TopicCategory, help_text=_('high-level geographic data thematic classification to assist in the grouping and search of available geographic data sets.'), null=True, blank=True, default=get_default_category)
+    category = models.ForeignKey(TopicCategory, help_text=_('high-level geographic data thematic classification to assist in the grouping and search of available geographic data sets.'), 
+        null=True, blank=True, limit_choices_to=Q(is_choice=True), default=get_default_category)
+    spatial_representation_type = models.ForeignKey(SpatialRepresentationType, help_text=_('method used to represent geographic information in the dataset.'), null=True, blank=True, limit_choices_to=Q(is_choice=True))
 
     # Section 5
     temporal_extent_start = models.DateField(_('temporal extent start'), blank=True, null=True, help_text=_('time period covered by the content of the dataset (start)'))
@@ -179,22 +277,24 @@ class ResourceBase(models.Model, PermissionLevelMixin):
     csw_insert_date = models.DateTimeField(_('CSW insert date'), auto_now_add=True, null=True)
     csw_type = models.CharField(_('CSW type'), max_length=32, default='dataset', null=False, choices=HIERARCHY_LEVELS)
     csw_anytext = models.TextField(_('CSW anytext'), null=True)
-    csw_wkt_geometry = models.TextField(_('CSW WKT geometry'), null=False, default='SRID=4326;POLYGON((-180 -90,-180 90,180 90,180 -90,-180 -90))')
+    csw_wkt_geometry = models.TextField(_('CSW WKT geometry'), null=False, default='POLYGON((-180 -90,-180 90,180 90,180 -90,-180 -90))')
 
     # metadata XML specific fields
     metadata_uploaded = models.BooleanField(default=False)
     metadata_xml = models.TextField(null=True, default='<gmd:MD_Metadata xmlns:gmd="http://www.isotc211.org/2005/gmd"/>', blank=True)
+
+    thumbnail = models.ForeignKey(Thumbnail, null=True, blank=True)
 
     def __unicode__(self):
         return self.title
 
     @property
     def bbox(self):
-        return [self.bbox_x0, self.bbox_x1, self.bbox_y0, self.bbox_y1, self.srid]
+        return [self.bbox_x0, self.bbox_y0, self.bbox_x1, self.bbox_y1, self.srid]
 
     @property
     def bbox_string(self):
-        return ",".join([str(self.bbox_x0), str(self.bbox_x1), str(self.bbox_y0), str(self.bbox_y1)])
+        return ",".join([str(self.bbox_x0), str(self.bbox_y0), str(self.bbox_x1), str(self.bbox_y1)])
 
     @property
     def geographic_bounding_box(self):
@@ -204,14 +304,6 @@ class ResourceBase(models.Model, PermissionLevelMixin):
         """Generate minx/miny/maxx/maxy of map extent"""
 
         return self.bbox
-
-    def eval_keywords_region(self):
-        """Returns expanded keywords_region tuple'd value"""
-        index = next((i for i,(k,v) in enumerate(COUNTRIES) if k==self.keywords_region),None)
-        if index is not None:
-            return COUNTRIES[index][1]
-        else:
-            return self.keywords_region
 
     @property
     def poc_role(self):
@@ -242,6 +334,19 @@ class ResourceBase(models.Model, PermissionLevelMixin):
         self.bbox_x1 = box[1]
         self.bbox_y0 = box[2]
         self.bbox_y1 = box[3]
+
+    def download_links(self):
+        """assemble download links for pycsw"""
+        links = []
+        for url in self.link_set.all():
+            if url.link_type == 'metadata':  # avoid recursion
+                continue
+            if url.link_type == 'html':
+                links.append((self.title, 'Web address (URL)', 'WWW:LINK-1.0-http--link', url.url))
+            else:
+                description = '%s (%s Format)' % (self.title, url.name)
+                links.append((self.title, description, 'WWW:DOWNLOAD-1.0-http--download', url.url))
+        return links
 
     def _set_poc(self, poc):
         # reset any poc asignation to this resource
@@ -317,7 +422,7 @@ class Link(models.Model):
 def resourcebase_post_save(instance, sender, **kwargs):
     """
     Since django signals are not propagated from child to parent classes we need to call this 
-    from the childs.
+    from the children.
     TODO: once the django will support signal propagation we need to attach a single signal here
     """
     resourcebase = instance.resourcebase_ptr
@@ -325,7 +430,6 @@ def resourcebase_post_save(instance, sender, **kwargs):
         user = resourcebase.owner
     else:
         user = ResourceBase.objects.admin_contact()
-
     pc, __ = Profile.objects.get_or_create(user=user,
                                            defaults={"name": resourcebase.owner.username})
     ac, __ = Profile.objects.get_or_create(user=user,

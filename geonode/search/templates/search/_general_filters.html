@@ -1,21 +1,21 @@
 {% load i18n %}
-{% load layers_tags %}
+{% load base_tags %}
 {% load taggit_extras %}
 <nav class="filter">
   <h2><a href="#" class="toggle toggle-nav"><i class="icon-chevron-down"></i>{% trans "Categories" %}</a></h2>
   <ul class="nav" id="categories">
-    {% layer_categories as category_list %}
     <li><a data-class="all" class="active trigger-query">{% trans "All Categories" %}</a></li>
+    {% categories as category_list %}
     {% for category in category_list %}
-    <li><a data-class="{{category.slug}}" class="trigger-query">{{ category }}
+    <li><a data-class="{{category.identifier}}" class="trigger-query">{{ category.gn_description }}
     {% if type == 'layer' %}
-    ({{ category.counts.layers }})
+    <span class="badge pull-right">{{ category.layer_count }}</span>
     {% elif type == 'map' %}
-    ({{ category.counts.maps }})
+    <span class="badge pull-right">{{ category.map_count }}</span>
     {% elif type == 'document' %}
-    ({{ category.counts.documents }})
+    <span class="badge pull-right">{{ category.document_count }}</span>
     {% else %}
-    ({{ category.counts.layers|add:category.counts.maps|add:category.counts.documents }})
+    <span class="badge pull-right">{{ category.layer_count|add:category.map_count|add:category.document_count }}</span>
     {% endif %}
     </a></li>
     {% endfor %}

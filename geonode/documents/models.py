@@ -30,6 +30,9 @@ class Document(ResourceBase):
     doc_file = models.FileField(upload_to='documents')
     extension = models.CharField(max_length=128,blank=True,null=True)
 
+    popular_count = models.IntegerField(default=0)
+    share_count = models.IntegerField(default=0)
+
     def __unicode__(self):  
         return self.title
         
@@ -66,6 +69,12 @@ class Document(ResourceBase):
     def class_name(self):
         return self.__class__.__name__
 
+def get_related_documents(resource):
+    if isinstance(resource, Layer) or isinstance(resource, Map):
+        ct = ContentType.objects.get_for_model(resource)
+        return Document.objects.filter(content_type=ct,object_id=resource.pk)
+    else: return None
+
 def pre_save_document(instance, sender, **kwargs):
     base_name, extension = os.path.splitext(instance.doc_file.name)
     instance.extension=extension[1:]
@@ -79,7 +88,7 @@ def pre_save_document(instance, sender, **kwargs):
         instance.title = instance.name
 
     if instance.resource:
-        instance.csw_wkt_geometry = instance.resource.geographic_bounding_box
+        instance.csw_wkt_geometry = instance.resource.geographic_bounding_box.split(';')[-1]
         instance.bbox_x0 = instance.resource.bbox_x0
         instance.bbox_x1 = instance.resource.bbox_x1
         instance.bbox_y0 = instance.resource.bbox_y0

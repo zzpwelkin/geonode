@@ -144,13 +144,12 @@ class Catalogue(CatalogueServiceWeb):
             'id_pname': id_pname
         })
         md_doc = tpl.render(ctx)
-        md_doc = md_doc.encode("utf-8")
         return md_doc
 
     def csw_gen_anytext(self, xml):
         """ get all element data from an XML document """
         xml = etree.fromstring(xml)
-        return ' '.join([value for value in xml.xpath('//text()')])
+        return ' '.join([value.strip() for value in xml.xpath('//text()')])
 
     def csw_request(self, layer, template):
 
