@@ -151,6 +151,7 @@ INSTALLED_APPS = (
     # Third party apps
 
     # Utility
+#    'autocomplete_light',
     'request',
     'pagination',
     'taggit',
@@ -159,6 +160,7 @@ INSTALLED_APPS = (
     'friendlytagloader',
     'geoexplorer',
     'django_extensions',
+    'pywps',
 
     # Theme
     "pinax_theme_bootstrap_account",

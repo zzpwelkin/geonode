@@ -1,6 +1,6 @@
 [
 	{
-		"model":"wpsprocess.topiccategory",
+		"model":"pywps.topiccategory",
 		"pk":1,
 		"fields": {
             "description": "reprojection of image or vector", 
@@ -10,7 +10,7 @@
 	},
 	
 	{
-		"model":"wpsprocess.topiccategory",
+		"model":"pywps.topiccategory",
 		"pk":2,
 		"fields": {
             "description": "registrate images", 
@@ -19,7 +19,7 @@
         }
 	},
 	{
-		"model":"wpsprocess.topiccategory",
+		"model":"pywps.topiccategory",
 		"pk":3,
 		"fields":{
 			"name":"Orthorectification",
@@ -28,7 +28,7 @@
 		}
 	},
 	{
-		"model":"wpsprocess.topiccategory",
+		"model":"pywps.topiccategory",
 		"pk":4,
 		"fields":{
 			"name":"Miscellaneous Process",

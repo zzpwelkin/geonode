@@ -50,39 +50,6 @@ def process_msg(wpsservice):
     
 class RepertoryTest(TestCase):
     pass
-        
-class ProcessManageTest(TestCase):
-    """
-    process manage test
-    """
-    def setUp(self):
-        self.ogcUser = 'ogcTester'
-        self.wpsservice = register(self.ogcUser, '123')
-        
-    def tearDown(self):
-        # delete ogcTester user and wps repertory
-        unregister(self.wpsservice)
-    
-    def test_update_profile(self):
-        # update profile
-        processes = [u'noinputsprocess', u'literalprocess', u'complexprocess', u'nomimetypesprocess', 
-                     u'complexprocessows', u'bboxprocess', u'asyncprocess', u'flagsprocess', u'lineagereturn', 
-                     u'referencedefault', u'returnWCS']
-        WPSService.objects.get(username = self.ogcUser).update_profile(settings.WPS.get('testprofile', ''))
-        
-        self.assertEqual(11, len(self.wpsservice.process_set.all()) , process_msg(self.wpsservice))
-        
-        # compare the process list
-        ps = []
-        for prs in Process.objects.all():
-            ps.append(prs.identifier)
-            
-        self.assertListEqual(sorted(processes), sorted(ps))
-        
-        # repeate update 
-        WPSService.objects.get(username = self.ogcUser).update_profile(settings.WPS.get('testprofile', ''))
-        WPSService.objects.get(username = self.ogcUser).update_profile(settings.WPS.get('testprofile', ''))
-        self.assertEqual(11, len(self.wpsservice.process_set.all()) , process_msg(self.wpsservice))
 
 class OGCCompatibleAPITest(TestCase):
     """

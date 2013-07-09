@@ -26,52 +26,52 @@ class Repertory:
         """
         return os.path.exists(os.path.join(self._pkgpath, self._pkgname, name))
         
-    def delete_profile(self, name):
-        """
-        delete an profile 
-        
-        @param name: the name of profile will be deleted
-        """
-        sys.path.append(self._pkgpath)
-        module = __import__(self._pkgname)
-        module.__all__.remove(os.path.splitext(name)[0])
-        with closing(open(os.path.join(self._pkgpath, self._pkgname, "__init__.py"), 'w')) as f:
-            __all = str(module.__all__)
-            f.write('__all__ = '+ __all[:-1] + ',' + __all[-1])
-            
-        os.remove(os.path.join(self._pkgpath, self._pkgname, name))
-    
-    def update_profile(self, name, f, commit=None):
-        """
-        update an profile 
-        
-        @param name: profile name that wanted to be updated
-        @param f: input stream with service profile context, f stream will not be closed in that method
-        @param commit: commit what the resion is for update that profile 
-        """
-        
-        profile = os.path.join(self._pkgpath, self._pkgname, name)
-        # add or update profile
-        if os.path.exists(profile):
-            #TODO: add the version manage, now just remove it
-            logger.info("remove exited profile {0} in {1} repertory".format(name, self._pkgname))
-            self.delete_profile(name)
-        
-        with closing( open( profile, 'w') ) as pf:
-            pf.write(f.read())
-        
-        sys.path.append(self._pkgpath)
-        module = __import__(self._pkgname)
-        if os.path.splitext(name)[0] not in module.__all__:
-            module.__all__.append(os.path.splitext(name)[0])
-            
-        # logger write
-        logger.info('All the profiles in repertory {0} is {1}'.format(self._pkgname, str(module.__all__)))
-            
-        with closing(open(os.path.join(self._pkgpath, self._pkgname, "__init__.py"), 'w')) as f:
-            __all = str(module.__all__)
-            # add an comma at the end of __all__
-            f.write('__all__ = '+ __all[:-1] + ',' + __all[-1])
+#    def delete_profile(self, name):
+#        """
+#        delete an profile 
+#        
+#        @param name: the name of profile will be deleted
+#        """
+#        sys.path.append(self._pkgpath)
+#        module = __import__(self._pkgname)
+#        module.__all__.remove(os.path.splitext(name)[0])
+#        with closing(open(os.path.join(self._pkgpath, self._pkgname, "__init__.py"), 'w')) as f:
+#            __all = str(module.__all__)
+#            f.write('__all__ = '+ __all[:-1] + ',' + __all[-1])
+#            
+#        os.remove(os.path.join(self._pkgpath, self._pkgname, name))
+#    
+#    def update_profile(self, name, f, commit=None):
+#        """
+#        update an profile 
+#        
+#        @param name: profile name that wanted to be updated
+#        @param f: input stream with service profile context, f stream will not be closed in that method
+#        @param commit: commit what the resion is for update that profile 
+#        """
+#        
+#        profile = os.path.join(self._pkgpath, self._pkgname, name)
+#        # add or update profile
+#        if os.path.exists(profile):
+#            #TODO: add the version manage, now just remove it
+#            logger.info("remove exited profile {0} in {1} repertory".format(name, self._pkgname))
+#            self.delete_profile(name)
+#        
+#        with closing( open( profile, 'w') ) as pf:
+#            pf.write(f.read())
+#        
+#        sys.path.append(self._pkgpath)
+#        module = __import__(self._pkgname)
+#        if os.path.splitext(name)[0] not in module.__all__:
+#            module.__all__.append(os.path.splitext(name)[0])
+#            
+#        # logger write
+#        logger.info('All the profiles in repertory {0} is {1}'.format(self._pkgname, str(module.__all__)))
+#            
+#        with closing(open(os.path.join(self._pkgpath, self._pkgname, "__init__.py"), 'w')) as f:
+#            __all = str(module.__all__)
+#            # add an comma at the end of __all__
+#            f.write('__all__ = '+ __all[:-1] + ',' + __all[-1])
     
     def delete_process(self, identifier, version):
         """

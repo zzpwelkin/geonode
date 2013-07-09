@@ -60,6 +60,8 @@ urlpatterns = patterns('',
     
     # Process views
     (r'^processes/', include('geonode.wpsprocess.urls')),
+    
+    #(r'^wps/', include('pywps.urls')),
 
     # Catalogue views
     (r'^catalogue/', include('geonode.catalogue.urls')),

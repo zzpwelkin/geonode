@@ -351,6 +351,7 @@ def geoserver_pre_save(instance, sender, **kwargs):
     gs_resource = gs_catalog.get_resource(instance.name)
 
     bbox = gs_resource.latlon_bbox
+    logger.info('The BBox of this resource is [({x0},{y0}), ({x1,{y1})]'.format(bbox[0], bbox[2], bbox[1], bbox[3]))
 
     #FIXME(Ariel): Correct srid setting below
     #self.srid = gs_resource.src
@@ -395,6 +396,7 @@ def geoserver_post_save(instance, sender, **kwargs):
     gs_catalog.save(gs_resource)
 
     bbox = gs_resource.latlon_bbox
+    logger.info('The BBox of this resource is [({x0},{y0}), ({x1,{y1})]'.format(bbox[0], bbox[2], bbox[1], bbox[3]))
     dx = float(bbox[1]) - float(bbox[0])
     dy = float(bbox[3]) - float(bbox[2])
 
